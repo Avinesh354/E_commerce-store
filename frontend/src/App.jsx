@@ -1,38 +1,38 @@
-import { Link, Route, Routes } from "react-router-dom";
-import { useAuth } from "./context/AuthContext";
+import { useEffect } from "react";
+import { Route, Routes, useLocation } from "react-router-dom";
+import Footer from "./components/Footer";
+import Header from "./components/Header";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Products from "./pages/Products";
+import { useCart } from "./context/CartContext";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
+import Home from "./pages/Home";
+import Login from "./pages/Login";
 import Orders from "./pages/Orders";
+import ProductDetail from "./pages/ProductDetail";
+import Products from "./pages/Products";
+import Register from "./pages/Register";
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
 
 export default function App() {
-  const { isLoggedIn, logout } = useAuth();
+  const { toast } = useCart();
 
   return (
-    <>
-      <nav className="navbar">
-        <Link to="/" className="brand">MyShop</Link>
-        <div>
-          {isLoggedIn ? (
-            <>
-              <Link to="/cart">Cart</Link>
-              <Link to="/orders">Orders</Link>
-              <button onClick={logout}>Logout</button>
-            </>
-          ) : (
-            <>
-              <Link to="/login">Login</Link>
-              <Link to="/register">Register</Link>
-            </>
-          )}
-        </div>
-      </nav>
-      <main>
+    <div className="shell">
+      <ScrollToTop />
+      <Header />
+      <main className="page">
         <Routes>
-          <Route path="/" element={<Products />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/products" element={<Products />} />
+          <Route path="/product/:id" element={<ProductDetail />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/cart" element={<ProtectedRoute><Cart /></ProtectedRoute>} />
@@ -40,6 +40,8 @@ export default function App() {
           <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
         </Routes>
       </main>
-    </>
+      <Footer />
+      {toast && <div className="toast" role="status">{toast}</div>}
+    </div>
   );
 }

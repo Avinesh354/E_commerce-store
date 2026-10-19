@@ -1,89 +1,149 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import api from "../api/axios";
-import { useAuth } from "../context/AuthContext";
+import Loading from "../components/Loading";
+import ProductCard from "../components/ProductCard";
+import { useCatalog } from "../context/CatalogContext";
+import useSlowLoading from "../hooks/useSlowLoading";
+
+const PAGE_SIZE = 12;
 
 export default function Products() {
-  const { isLoggedIn } = useAuth();
-  const navigate = useNavigate();
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
-  const [page, setPage] = useState(1);
-  const [hasNext, setHasNext] = useState(false);
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [params, setParams] = useSearchParams();
+  const { categories } = useCatalog();
+
+  const search = params.get("search") || "";
+  const category = params.get("category") || "";
+  const ordering = params.get("ordering") || "";
+  const page = Number(params.get("page") || 1);
+  const key = `${search}|${category}|${ordering}|${page}`;
+
+  const [result, setResult] = useState({ key: null, data: { results: [], count: 0 } });
+  const loading = result.key !== key;
+  const slow = useSlowLoading(loading);
 
   useEffect(() => {
-    api.get("/categories/").then((res) => setCategories(res.data));
-  }, []);
-
-  useEffect(() => {
-    setLoading(true);
+    let active = true;
     api
       .get("/products/", {
-        params: { search: search || undefined, category: category || undefined, page },
+        params: {
+          search: search || undefined,
+          category: category || undefined,
+          ordering: ordering || undefined,
+          page,
+        },
       })
-      .then((res) => {
-        setProducts(res.data.results);
-        setHasNext(!!res.data.next);
-      })
-      .finally(() => setLoading(false));
-  }, [search, category, page]);
+      .then((res) => active && setResult({ key, data: res.data }))
+      .catch(() => active && setResult({ key, data: { results: [], count: 0 } }));
+    return () => {
+      active = false;
+    };
+  }, [key, search, category, ordering, page]);
 
-  const addToCart = async (id) => {
-    if (!isLoggedIn) return navigate("/login");
-    try {
-      await api.post("/cart/add/", { product_id: id, quantity: 1 });
-      setMessage("Added to cart");
-    } catch (err) {
-      setMessage(err.response?.data?.detail || "Could not add to cart.");
-    }
+  const update = (changes) => {
+    const next = new URLSearchParams(params);
+    Object.entries(changes).forEach(([name, value]) => {
+      if (value) next.set(name, value);
+      else next.delete(name);
+    });
+    if (!("page" in changes)) next.delete("page");
+    setParams(next);
   };
 
+  const activeCategory = categories.find((c) => String(c.id) === category);
+  let heading = "All products";
+  if (search) heading = `Results for "${search}"`;
+  else if (activeCategory) heading = activeCategory.name;
+
+  const { results, count } = result.data;
+  const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
+  const pages = totalPages <= 10 ? Array.from({ length: totalPages }, (_, i) => i + 1) : [];
+
   return (
-    <div>
-      <div className="filters">
-        <input
-          placeholder="Search products..."
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-        />
-        <select
-          value={category}
-          onChange={(e) => { setCategory(e.target.value); setPage(1); }}
-        >
-          <option value="">All categories</option>
+    <div className="listing">
+      <aside className="sidebar">
+        <h2>Categories</h2>
+        <ul>
+          <li>
+            <button
+              className={!category ? "side-item active" : "side-item"}
+              onClick={() => update({ category: "" })}
+            >
+              All products
+            </button>
+          </li>
           {categories.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+            <li key={c.id}>
+              <button
+                className={String(c.id) === category ? "side-item active" : "side-item"}
+                onClick={() => update({ category: String(c.id) })}
+              >
+                {c.name}
+              </button>
+            </li>
           ))}
-        </select>
-      </div>
+        </ul>
+      </aside>
 
-      {message && <p className="message">{message}</p>}
-      {loading && <p>Loading...</p>}
-      {!loading && products.length === 0 && <p>No products found.</p>}
+      <section className="results">
+        <div className="results-head">
+          <div>
+            <h1>{heading}</h1>
+            {!loading && (
+              <p className="muted">
+                {count} {count === 1 ? "product" : "products"} found
+              </p>
+            )}
+          </div>
+          <label className="sort">
+            Sort by
+            <select value={ordering} onChange={(e) => update({ ordering: e.target.value })}>
+              <option value="">Newest first</option>
+              <option value="price">Price: low to high</option>
+              <option value="-price">Price: high to low</option>
+            </select>
+          </label>
+        </div>
 
-      <div className="grid">
-        {products.map((p) => (
-          <div className="product" key={p.id}>
-            {p.image ? <img src={p.image} alt={p.name} /> : <div className="noimg">No image</div>}
-            <h3>{p.name}</h3>
-            <p className="muted">{p.category_name}</p>
-            <p className="price">₹{p.price}</p>
-            <button onClick={() => addToCart(p.id)} disabled={p.stock === 0}>
-              {p.stock === 0 ? "Out of stock" : "Add to cart"}
+        {loading && <Loading slow={slow} />}
+
+        {!loading && results.length === 0 && (
+          <div className="empty">
+            <h2>No products found</h2>
+            <p className="muted">Try a different word, or browse everything we have.</p>
+            <Link to="/products" className="btn-link">Show all products</Link>
+          </div>
+        )}
+
+        {!loading && results.length > 0 && (
+          <div className="grid">
+            {results.map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        )}
+
+        {!loading && totalPages > 1 && (
+          <div className="pager">
+            <button disabled={page <= 1} onClick={() => update({ page: String(page - 1) })}>
+              Previous
+            </button>
+            {pages.map((n) => (
+              <button
+                key={n}
+                className={n === page ? "page-num active" : "page-num"}
+                onClick={() => update({ page: String(n) })}
+              >
+                {n}
+              </button>
+            ))}
+            {pages.length === 0 && <span className="muted">Page {page} of {totalPages}</span>}
+            <button disabled={page >= totalPages} onClick={() => update({ page: String(page + 1) })}>
+              Next
             </button>
           </div>
-        ))}
-      </div>
-
-      <div className="pager">
-        <button onClick={() => setPage(page - 1)} disabled={page === 1}>Previous</button>
-        <span>Page {page}</span>
-        <button onClick={() => setPage(page + 1)} disabled={!hasNext}>Next</button>
-      </div>
+        )}
+      </section>
     </div>
   );
 }
