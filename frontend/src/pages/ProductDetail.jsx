@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import api from "../api/axios";
 import Loading from "../components/Loading";
 import PriceBlock from "../components/PriceBlock";
 import ProductCard from "../components/ProductCard";
@@ -9,54 +8,31 @@ import ScrollRow from "../components/ScrollRow";
 import Rating from "../components/Rating";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
-import useSlowLoading from "../hooks/useSlowLoading";
+import { useCatalog } from "../context/CatalogContext";
 
 export default function ProductDetail() {
   const { id } = useParams();
+  // The key makes the page start fresh (quantity back to 1) when you open another product.
+  return <ProductView key={id} id={id} />;
+}
+
+function ProductView({ id }) {
   const navigate = useNavigate();
   const { isLoggedIn } = useAuth();
   const { addToCart } = useCart();
-  const [state, setState] = useState({ id: null, product: null, related: [] });
+  const { products, loaded } = useCatalog();
   const [qty, setQty] = useState(1);
 
-  const loading = state.id !== id;
-  const slow = useSlowLoading(loading);
+  const product = products.find((p) => String(p.id) === id);
+  const related = useMemo(
+    () =>
+      product
+        ? products.filter((p) => p.category === product.category && p.id !== product.id).slice(0, 12)
+        : [],
+    [products, product]
+  );
 
-  useEffect(() => {
-    let active = true;
-
-    async function load() {
-      try {
-        const { data } = await api.get(`/products/${id}/`);
-        if (!active) return;
-        setQty(1);
-        setState({ id, product: data, related: [] });
-        try {
-          const rel = await api.get("/products/", { params: { category: data.category } });
-          if (active) {
-            setState({
-              id,
-              product: data,
-              related: rel.data.results.filter((p) => String(p.id) !== String(id)).slice(0, 12),
-            });
-          }
-        } catch {
-          // Related products are optional.
-        }
-      } catch {
-        if (active) setState({ id, product: null, related: [] });
-      }
-    }
-
-    load();
-    return () => {
-      active = false;
-    };
-  }, [id]);
-
-  if (loading) return <Loading slow={slow} />;
-
-  const { product, related } = state;
+  if (!loaded) return <Loading slow={false} />;
 
   if (!product) {
     return (

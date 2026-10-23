@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import api from "../api/axios";
 import DealCard from "../components/DealCard";
 import HeroBanner from "../components/HeroBanner";
 import Loading from "../components/Loading";
@@ -9,7 +8,6 @@ import ProductImage from "../components/ProductImage";
 import ScrollRow from "../components/ScrollRow";
 import TrustStrip from "../components/TrustStrip";
 import { useCatalog } from "../context/CatalogContext";
-import useSlowLoading from "../hooks/useSlowLoading";
 import { offPercent } from "../utils/format";
 
 const COLORS = ["#1e40af", "#9a3412", "#9d174d", "#166534", "#5b21b6", "#0f766e", "#b45309"];
@@ -35,35 +33,22 @@ const COPY = {
 const DEAL_CARDS = 9;
 
 export default function Home() {
-  const { categories, loaded } = useCatalog();
-  const [sections, setSections] = useState(null);
+  const { categories, products, loaded, failed } = useCatalog();
 
-  useEffect(() => {
-    if (!loaded) return undefined;
-    let active = true;
+  const sections = useMemo(
+    () =>
+      categories
+        .map((category) => {
+          const list = products.filter((p) => p.category === category.id);
+          return { category, count: list.length, products: list.slice(0, 12) };
+        })
+        .filter((s) => s.count > 0),
+    [categories, products]
+  );
 
-    Promise.all(
-      categories.map((category) =>
-        api
-          .get("/products/", { params: { category: category.id } })
-          .then((res) => ({ category, count: res.data.count, products: res.data.results }))
-          .catch(() => ({ category, count: 0, products: [] }))
-      )
-    ).then((list) => {
-      if (active) setSections(list.filter((s) => s.products.length > 0));
-    });
+  if (!loaded) return <Loading slow={false} />;
 
-    return () => {
-      active = false;
-    };
-  }, [loaded, categories]);
-
-  const loading = sections === null;
-  const slow = useSlowLoading(loading);
-
-  if (loading) return <Loading slow={slow} />;
-
-  if (sections.length === 0) {
+  if (failed || sections.length === 0) {
     return (
       <div className="empty">
         <h2>The store is getting stocked</h2>

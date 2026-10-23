@@ -1,44 +1,31 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import api from "../api/axios";
 import Loading from "../components/Loading";
 import ProductCard from "../components/ProductCard";
 import { useCatalog } from "../context/CatalogContext";
-import useSlowLoading from "../hooks/useSlowLoading";
 
 const PAGE_SIZE = 12;
 
 export default function Products() {
   const [params, setParams] = useSearchParams();
-  const { categories } = useCatalog();
+  const { categories, products, loaded } = useCatalog();
 
   const search = params.get("search") || "";
   const category = params.get("category") || "";
   const ordering = params.get("ordering") || "";
-  const page = Number(params.get("page") || 1);
-  const key = `${search}|${category}|${ordering}|${page}`;
+  const page = Math.max(1, Number(params.get("page") || 1));
 
-  const [result, setResult] = useState({ key: null, data: { results: [], count: 0 } });
-  const loading = result.key !== key;
-  const slow = useSlowLoading(loading);
-
-  useEffect(() => {
-    let active = true;
-    api
-      .get("/products/", {
-        params: {
-          search: search || undefined,
-          category: category || undefined,
-          ordering: ordering || undefined,
-          page,
-        },
-      })
-      .then((res) => active && setResult({ key, data: res.data }))
-      .catch(() => active && setResult({ key, data: { results: [], count: 0 } }));
-    return () => {
-      active = false;
-    };
-  }, [key, search, category, ordering, page]);
+  const filtered = useMemo(() => {
+    const words = search.toLowerCase().split(/\s+/).filter(Boolean);
+    let list = products.filter((p) => {
+      if (category && String(p.category) !== category) return false;
+      const text = `${p.name} ${p.description} ${p.category_name}`.toLowerCase();
+      return words.every((word) => text.includes(word));
+    });
+    if (ordering === "price") list = [...list].sort((a, b) => a.price - b.price);
+    if (ordering === "-price") list = [...list].sort((a, b) => b.price - a.price);
+    return list;
+  }, [products, category, search, ordering]);
 
   const update = (changes) => {
     const next = new URLSearchParams(params);
@@ -50,13 +37,16 @@ export default function Products() {
     setParams(next);
   };
 
+  if (!loaded) return <Loading slow={false} />;
+
   const activeCategory = categories.find((c) => String(c.id) === category);
   let heading = "All products";
   if (search) heading = `Results for "${search}"`;
   else if (activeCategory) heading = activeCategory.name;
 
-  const { results, count } = result.data;
+  const count = filtered.length;
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
+  const results = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const pages = totalPages <= 10 ? Array.from({ length: totalPages }, (_, i) => i + 1) : [];
 
   return (
@@ -89,11 +79,9 @@ export default function Products() {
         <div className="results-head">
           <div>
             <h1>{heading}</h1>
-            {!loading && (
-              <p className="muted">
-                {count} {count === 1 ? "product" : "products"} found
-              </p>
-            )}
+            <p className="muted">
+              {count} {count === 1 ? "product" : "products"} found
+            </p>
           </div>
           <label className="sort">
             Sort by
@@ -105,9 +93,7 @@ export default function Products() {
           </label>
         </div>
 
-        {loading && <Loading slow={slow} />}
-
-        {!loading && results.length === 0 && (
+        {results.length === 0 && (
           <div className="empty">
             <h2>No products found</h2>
             <p className="muted">Try a different word, or browse everything we have.</p>
@@ -115,7 +101,7 @@ export default function Products() {
           </div>
         )}
 
-        {!loading && results.length > 0 && (
+        {results.length > 0 && (
           <div className="grid">
             {results.map((product) => (
               <ProductCard key={product.id} product={product} />
@@ -123,7 +109,7 @@ export default function Products() {
           </div>
         )}
 
-        {!loading && totalPages > 1 && (
+        {totalPages > 1 && (
           <div className="pager">
             <button disabled={page <= 1} onClick={() => update({ page: String(page - 1) })}>
               Previous

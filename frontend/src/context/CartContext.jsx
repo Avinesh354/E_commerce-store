@@ -10,10 +10,10 @@ export function CartProvider({ children }) {
   const [toast, setToast] = useState("");
   const timer = useRef(null);
 
-  const showToast = useCallback((message) => {
-    setToast(message);
+  const showToast = useCallback((message, sticky = false) => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setToast(""), 2600);
+    setToast(message);
+    if (!sticky) timer.current = setTimeout(() => setToast(""), 2600);
   }, []);
 
   const refreshCart = useCallback(async () => {
@@ -35,12 +35,19 @@ export function CartProvider({ children }) {
 
   const addToCart = useCallback(
     async (productId, quantity = 1) => {
+      showToast("Adding to cart...", true);
+      const slowTimer = setTimeout(
+        () => showToast("Waking up the server, this can take up to a minute...", true),
+        3000
+      );
       try {
         await api.post("/cart/add/", { product_id: productId, quantity });
         await refreshCart();
+        clearTimeout(slowTimer);
         showToast("Added to cart");
         return true;
       } catch (err) {
+        clearTimeout(slowTimer);
         showToast(err.response?.data?.detail || "Could not add to cart.");
         return false;
       }
